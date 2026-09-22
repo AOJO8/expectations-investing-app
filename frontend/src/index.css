@@ -1,0 +1,216 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #080a0c;
+  --panel: #0d1115;
+  --panel-secondary: #111820;
+  --border: #232a31;
+  --orange: #ff9f1c;
+  --orange-bright: #ffb000;
+  --text: #f2f2f2;
+  --muted: #9ba3af;
+  --positive: #16c784;
+  --negative: #ea3943;
+  --neutral: #8a94a6;
+
+  /* Heat ramp: change/change% intensity. */
+  --pos-1: rgba(22, 199, 132, 0.10);
+  --pos-2: rgba(22, 199, 132, 0.22);
+  --pos-3: rgba(22, 199, 132, 0.38);
+  --neg-1: rgba(234, 57, 67, 0.10);
+  --neg-2: rgba(234, 57, 67, 0.22);
+  --neg-3: rgba(234, 57, 67, 0.38);
+
+  --row-height: 24px;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+  border-color: var(--border);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 12px;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* Financial figures: fixed-width digits so columns align. */
+.num {
+  font-family: 'IBM Plex Mono', monospace;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  letter-spacing: -0.2px;
+}
+
+.label {
+  color: var(--orange);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+/* ---- scrollbars ------------------------------------------------------- */
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+::-webkit-scrollbar-thumb {
+  background: #2c343d;
+  border-radius: 0;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3a444f;
+}
+::-webkit-scrollbar-corner {
+  background: var(--bg);
+}
+
+/* ---- price tick flash -------------------------------------------------- */
+@keyframes flash-up {
+  0% {
+    background-color: rgba(22, 199, 132, 0.55);
+    color: #ffffff;
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+@keyframes flash-down {
+  0% {
+    background-color: rgba(234, 57, 67, 0.55);
+    color: #ffffff;
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+.flash-up {
+  animation: flash-up 550ms ease-out;
+}
+.flash-down {
+  animation: flash-down 550ms ease-out;
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.pulse {
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+/* ---- skeletons --------------------------------------------------------- */
+@keyframes shimmer {
+  0% {
+    background-position: -320px 0;
+  }
+  100% {
+    background-position: 320px 0;
+  }
+}
+.skeleton {
+  background: linear-gradient(90deg, #141a21 8%, #1c242d 18%, #141a21 33%);
+  background-size: 640px 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flash-up,
+  .flash-down,
+  .pulse,
+  .skeleton {
+    animation: none;
+  }
+}
+
+/* ---- table primitives -------------------------------------------------- */
+.ws-cell {
+  padding: 0 7px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  height: 100%;
+}
+
+.ws-header {
+  color: var(--orange);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10px;
+  font-weight: 600;
+  user-select: none;
+}
+
+.ws-row:hover {
+  background: #131a22 !important;
+}
+
+.ws-row[data-selected='true'] {
+  background: #182231 !important;
+  box-shadow: inset 2px 0 0 var(--orange);
+}
+
+/* Resize handle sitting on a column edge. */
+.resizer {
+  position: absolute;
+  right: -3px;
+  top: 0;
+  height: 100%;
+  width: 6px;
+  cursor: col-resize;
+  user-select: none;
+  touch-action: none;
+  z-index: 5;
+}
+.resizer:hover,
+.resizer.is-resizing {
+  background: var(--orange);
+  opacity: 0.7;
+}
+
+button {
+  font-family: inherit;
+}
+
+input,
+select {
+  font-family: inherit;
+  background: var(--panel-secondary);
+  border: 1px solid var(--border);
+  color: var(--text);
+  outline: none;
+}
+input:focus,
+select:focus {
+  border-color: var(--orange);
+}
+
+[data-tip] {
+  position: relative;
+}
