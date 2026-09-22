@@ -11,6 +11,7 @@ the UI so it cannot be mistaken for real prices.
 from __future__ import annotations
 
 import hashlib
+from functools import lru_cache
 
 import numpy as np
 import pandas as pd
@@ -45,6 +46,45 @@ def _seed(ticker: str) -> int:
     return int(hashlib.sha256(ticker.encode()).hexdigest()[:8], 16)
 
 
+def _ohlcv_from_close(
+    close: np.ndarray, index: pd.DatetimeIndex, rng: np.random.Generator, vol: float
+) -> pd.DataFrame:
+    n = len(close)
+    spread = np.abs(rng.normal(0, vol, n)) * close
+    open_ = close * (1 + rng.normal(0, vol / 2, n))
+    high = np.maximum(open_, close) + spread
+    low = np.minimum(open_, close) - spread
+    volume = np.abs(rng.normal(4_000_000, 1_500_000, n)).round()
+    return pd.DataFrame(
+        {
+            "Open": open_,
+            "High": high,
+            "Low": low,
+            "Close": close,
+            "Adj Close": close,
+            "Volume": volume,
+        },
+        index=index,
+    )
+
+
+@lru_cache(maxsize=512)
+def _daily_master(ticker: str) -> pd.DataFrame:
+    """2000 business days of deterministic daily bars for one ticker."""
+    sessions = 2000
+    seed = _seed(ticker)
+    rng = np.random.default_rng(seed)
+    base = 8.0 + (seed % 400)
+    drift = ((seed % 21) - 10) / 20000.0
+    vol = 0.008 + (seed % 25) / 1000.0
+    walk = np.exp(np.cumsum(rng.normal(drift, vol, sessions)))
+    # Anchor the *latest* close to the base level so eight years of compounding
+    # cannot drift a fixture price into four figures.
+    close = base * walk / walk[-1]
+    index = pd.bdate_range(end=pd.Timestamp("2026-09-22"), periods=sessions)
+    return _ohlcv_from_close(close, index, rng, vol)
+
+
 class FixtureProvider:
     name = "FIXTURE"
     is_synthetic = True
@@ -65,36 +105,36 @@ class FixtureProvider:
         return out
 
     def _series(self, ticker: str, days: int, interval: str) -> pd.DataFrame:
-        rng = np.random.default_rng(_seed(ticker))
-        sessions = max(5, min(int(days * 0.7), 2000))
-        if interval in {"1m", "5m", "15m", "30m", "60m", "1h"}:
-            index = pd.date_range(end=pd.Timestamp("2026-09-22 20:00"), periods=sessions, freq="30min")
-        else:
-            index = pd.bdate_range(end=pd.Timestamp("2026-09-22"), periods=sessions)
+        """A window onto one master series per ticker.
 
-        base = 8.0 + (_seed(ticker) % 400)
-        drift = ((_seed(ticker) % 21) - 10) / 20000.0
-        vol = 0.008 + (_seed(ticker) % 25) / 1000.0
-        shocks = rng.normal(drift, vol, sessions)
-        close = base * np.exp(np.cumsum(shocks))
+        Every period is a *tail slice* of the same walk, so the last close a
+        caller sees is identical whether it asked for 1 month or 5 years -
+        exactly as a real vendor behaves. Generating a fresh walk per request
+        would make the quote and the chart disagree.
+        """
+        if interval in {"1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h"}:
+            return self._intraday(ticker, days, interval)
+        master = _daily_master(ticker)
+        sessions = max(5, min(int(days * 0.7), len(master)))
+        return master.iloc[-sessions:].copy()
 
-        spread = np.abs(rng.normal(0, vol, sessions)) * close
-        open_ = close * (1 + rng.normal(0, vol / 2, sessions))
-        high = np.maximum(open_, close) + spread
-        low = np.minimum(open_, close) - spread
-        volume = np.abs(rng.normal(4_000_000, 1_500_000, sessions)).round()
+    def _intraday(self, ticker: str, days: int, interval: str) -> pd.DataFrame:
+        """Intraday bars that converge on the daily series' latest close."""
+        master = _daily_master(ticker)
+        anchor = float(master["Close"].iloc[-1])
+        minutes = {"1m": 1, "2m": 2, "5m": 5, "15m": 15, "30m": 30, "60m": 60, "90m": 90, "1h": 60}[interval]
+        bars = max(10, min(int(days * 390 / minutes), 800))
 
-        return pd.DataFrame(
-            {
-                "Open": open_,
-                "High": high,
-                "Low": low,
-                "Close": close,
-                "Adj Close": close,
-                "Volume": volume,
-            },
-            index=index,
+        rng = np.random.default_rng(_seed(ticker) + minutes)
+        vol = 0.0015 + (_seed(ticker) % 12) / 8000.0
+        shocks = rng.normal(0, vol, bars)
+        walk = np.exp(np.cumsum(shocks))
+        close = anchor * walk / walk[-1]  # end exactly on the daily close
+
+        index = pd.date_range(
+            end=pd.Timestamp("2026-09-22 20:00"), periods=bars, freq=f"{minutes}min"
         )
+        return _ohlcv_from_close(close, index, rng, vol)
 
     def fetch_metadata(self, tickers: list[str]) -> dict[str, dict]:
         out: dict[str, dict] = {}

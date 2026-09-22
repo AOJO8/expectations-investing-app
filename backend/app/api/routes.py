@@ -7,6 +7,7 @@ import logging
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 
 from ..core.cache import cache
+from ..core.circuit import provider_breaker
 from ..core.config import settings
 from ..data.instruments import GROUP_ORDER
 from ..data.providers import get_provider
@@ -42,6 +43,7 @@ def health() -> HealthResponse:
         version=VERSION,
         cache=cache.stats(),
         instruments=len(svc.instruments()),
+        provider_circuit=provider_breaker.status(),
     )
 
 

@@ -60,3 +60,4 @@ class HealthResponse(BaseModel):
     version: str
     cache: dict
     instruments: int
+    provider_circuit: dict = Field(default_factory=dict)

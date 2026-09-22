@@ -17,6 +17,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pandas as pd
 
+from ...core.circuit import provider_breaker
 from ...core.config import settings
 from .base import ProviderError
 
@@ -45,6 +46,8 @@ class YFinanceProvider:
         if not tickers:
             return {}
 
+        provider_breaker.check()
+
         out: dict[str, pd.DataFrame] = {}
         for start in range(0, len(tickers), self.batch_size):
             chunk = tickers[start : start + self.batch_size]
@@ -62,17 +65,28 @@ class YFinanceProvider:
                 )
             except Exception as exc:  # network/parse failure for the whole chunk
                 logger.warning("yfinance batch failed (%s): %s", chunk[:3], exc)
-                # Fall back to one request per ticker so a single poisoned
-                # symbol cannot blank out its neighbours.
-                out.update(self._fetch_history_individually(chunk, period, interval))
+                provider_breaker.record_failure()
+                provider_breaker.check()
                 continue
 
-            out.update(self._split_batch(raw, chunk))
+            resolved = self._split_batch(raw, chunk)
+            out.update(resolved)
 
-        # Any ticker the batch silently dropped gets one individual retry.
-        missing = [t for t in tickers if t not in out]
-        if missing:
-            out.update(self._fetch_history_individually(missing, period, interval))
+            if resolved:
+                provider_breaker.record_success()
+                # Only the stragglers are worth an individual retry: the batch
+                # clearly reached Yahoo, so a gap is symbol-specific.
+                missing = [t for t in chunk if t not in resolved]
+                if missing:
+                    out.update(self._fetch_history_individually(missing, period, interval))
+            else:
+                # Nothing at all came back. Retrying each symbol one by one here
+                # multiplies a connectivity failure by the size of the universe,
+                # so the whole chunk is reported unavailable instead.
+                logger.warning("yfinance returned no data for a batch of %s symbols", len(chunk))
+                provider_breaker.record_failure()
+                provider_breaker.check()
+
         return out
 
     def _split_batch(self, raw: pd.DataFrame, chunk: list[str]) -> dict[str, pd.DataFrame]:
@@ -199,7 +213,6 @@ class YFinanceProvider:
                 ("trailingPE", "trailing_pe"),
                 ("forwardPE", "forward_pe"),
                 ("priceToBook", "price_to_book"),
-                ("dividendYield", "dividend_yield"),
                 ("averageVolume", "average_volume"),
                 ("fiftyTwoWeekHigh", "fifty_two_week_high"),
                 ("fiftyTwoWeekLow", "fifty_two_week_low"),
@@ -210,7 +223,13 @@ class YFinanceProvider:
                 value = info.get(src)
                 if value is not None:
                     payload[dest] = value
+
+            dividend_yield = self._dividend_yield(info)
+            if dividend_yield is not None:
+                payload["dividend_yield"] = dividend_yield
             return ticker, payload
+
+        provider_breaker.check()
 
         out: dict[str, dict] = {}
         workers = min(settings.metadata_workers, max(1, len(tickers)))
@@ -224,7 +243,31 @@ class YFinanceProvider:
                     continue
                 if payload:
                     out[ticker] = payload
+
+        if out:
+            provider_breaker.record_success()
+        elif tickers:
+            provider_breaker.record_failure()
         return out
+
+    @staticmethod
+    def _dividend_yield(info: dict) -> float | None:
+        """Return the dividend yield as a fraction (0.0043 == 0.43%).
+
+        Yahoo's ``dividendYield`` has been served both as a fraction and as a
+        percentage depending on the yfinance release, and 0.43 is ambiguous
+        between 0.43% and 43%. ``trailingAnnualDividendYield`` is consistently
+        a fraction, so it is preferred; the fallback only rescales values that
+        are unambiguously percentages (> 1, i.e. above 100% as a fraction).
+        """
+        trailing = info.get("trailingAnnualDividendYield")
+        if isinstance(trailing, (int, float)) and trailing >= 0:
+            return float(trailing)
+
+        raw = info.get("dividendYield")
+        if not isinstance(raw, (int, float)) or raw < 0:
+            return None
+        return float(raw) / 100.0 if raw > 1 else float(raw)
 
     # ------------------------------------------------------------------- search
     def search(self, query: str, limit: int = 15) -> list[dict]:

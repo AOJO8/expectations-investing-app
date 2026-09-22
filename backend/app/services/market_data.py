@@ -31,6 +31,7 @@ from typing import Any, Iterable
 import pandas as pd
 
 from ..core.cache import cache
+from ..core.circuit import CircuitOpen, provider_breaker
 from ..core.config import settings
 from ..core import db
 from ..data.instruments import (
@@ -180,6 +181,9 @@ class MarketDataService:
                 lambda: get_provider().fetch_history([ticker], period=period, interval=interval).get(ticker),
                 max_stale=settings.max_stale_seconds if allow_stale else 0,
             )
+        except CircuitOpen:
+            logger.info("provider circuit open - no history for %s", ticker)
+            return None, False
         except Exception as exc:
             logger.info("history failed for %s: %s", ticker, exc)
             return None, False
@@ -214,6 +218,9 @@ class MarketDataService:
         if misses:
             try:
                 fetched = get_provider().fetch_history(misses, period=period, interval=interval)
+            except CircuitOpen:
+                logger.info("provider circuit open - skipping history fetch for %s symbols", len(misses))
+                fetched = {}
             except Exception as exc:
                 logger.warning("batch history failed entirely: %s", exc)
                 fetched = {}
@@ -258,15 +265,22 @@ class MarketDataService:
         if misses:
             try:
                 fetched = get_provider().fetch_metadata(misses)
+            except CircuitOpen:
+                logger.info("provider circuit open - skipping metadata for %s symbols", len(misses))
+                fetched = {}
             except Exception as exc:
                 logger.warning("metadata batch failed: %s", exc)
                 fetched = {}
             for ticker in misses:
                 payload = fetched.get(ticker) or {}
-                cache.set(f"meta:{ticker}", payload, settings.ttl_metadata)
                 if payload:
+                    cache.set(f"meta:{ticker}", payload, settings.ttl_metadata)
                     out[ticker] = payload
                     self._metadata_to_db(ticker, payload)
+                else:
+                    # Short TTL on a blank so a recovered provider is retried
+                    # soon rather than a day later.
+                    cache.set(f"meta:{ticker}", {}, min(settings.ttl_metadata, 300))
         return out
 
     def _metadata_from_db(self, ticker: str) -> dict | None:
@@ -384,6 +398,10 @@ class MarketDataService:
                 "market_cap": _f(meta.get("market_cap")),
                 "average_volume": _f(meta.get("average_volume")),
                 "beta": _f(meta.get("beta")),
+                "trailing_pe": _f(meta.get("trailing_pe")),
+                "forward_pe": _f(meta.get("forward_pe")),
+                "price_to_book": _f(meta.get("price_to_book")),
+                "dividend_yield": _f(meta.get("dividend_yield")),
                 "sector": meta.get("sector"),
                 "industry": meta.get("industry"),
                 "exchange": meta.get("exchange_name") or meta.get("exchange"),
@@ -551,6 +569,7 @@ class MarketDataService:
             ),
             "counts": self._status_counts(ordered),
             "breadth": self.compute_breadth(ordered),
+            "provider_circuit": provider_breaker.status(),
         }
 
     def _hydrate(self, tickers: list[str], by_ticker: dict[str, dict]) -> None:
