@@ -268,7 +268,10 @@ export function DetailDrawer({
               </div>
               {row.technical_score.components.map((component) => (
                 <div key={component.key} className="flex items-start justify-between gap-2 py-[1px] text-[10px]">
-                  <span className="text-muted">{component.detail}</span>
+                  <span className="min-w-0">
+                    <span className="text-text">{component.label}</span>{' '}
+                    <span className="text-muted">{component.detail}</span>
+                  </span>
                   <span className="num shrink-0" style={{ color: directionColor(component.points) }}>
                     {component.points > 0 ? '+' : ''}
                     {component.points}

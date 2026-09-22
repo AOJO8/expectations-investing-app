@@ -397,7 +397,10 @@ export function SignalCell({ row }: { row: SecurityRow }) {
               <div className="space-y-[2px] border-t border-border pt-1.5">
                 {score.components.map((component) => (
                   <div key={component.key} className="flex items-start justify-between gap-2">
-                    <span className="text-muted">{component.detail}</span>
+                    <span className="min-w-0">
+                      <span className="text-text">{component.label}</span>{' '}
+                      <span className="text-muted">{component.detail}</span>
+                    </span>
                     <span
                       className="num shrink-0"
                       style={{ color: directionColor(component.points) }}

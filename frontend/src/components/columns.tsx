@@ -349,13 +349,13 @@ export function buildColumns(ctx: ColumnContext): ColumnDef<SecurityRow, any>[] 
     helper.accessor((r) => r.trend ?? '', {
       id: 'trend',
       header: 'Trend',
-      size: 128,
+      size: 142,
       cell: ({ row }) => <TrendCell row={row.original} />,
     }),
     helper.accessor((r) => r.technical_signal ?? '', {
       id: 'technical_signal',
       header: 'Technical Signal',
-      size: 118,
+      size: 138,
       cell: ({ row }) => <SignalCell row={row.original} />,
     }),
     helper.accessor((r) => r.sector ?? '', {

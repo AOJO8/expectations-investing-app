@@ -55,7 +55,9 @@ export function Tooltip({
       {open && (
         <div
           role="tooltip"
-          className="fixed z-[200] border border-border bg-[#111820] px-2.5 py-2 text-[11px] leading-[15px] text-text shadow-[0_8px_24px_rgba(0,0,0,0.6)] pointer-events-none"
+          // whitespace-normal: the anchor lives inside a `white-space: nowrap`
+          // worksheet cell, which would otherwise stop the tooltip wrapping.
+          className="pointer-events-none fixed z-[200] whitespace-normal break-words border border-border bg-[#111820] px-2.5 py-2 text-[11px] leading-[15px] text-text shadow-[0_8px_24px_rgba(0,0,0,0.6)]"
           style={{
             top: coords.top,
             left: coords.left,
